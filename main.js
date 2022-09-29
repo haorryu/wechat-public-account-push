@@ -16,7 +16,7 @@ export default async function mainForProd() {
   console.log(dayjs().format('YYYY-MM-DD HH:mm:ss'))
   console.log('---')
   console.log('【连接微信公众平台】开始')
-  const accessToken = await getAccessToken()
+  const accessToken = await getAccessToken(config.PUSH_FROM)
   if (!accessToken) {
     console.log('遇到错误，执行终止！')
     return
@@ -40,7 +40,7 @@ export default async function mainForProd() {
     failPostNum,
     successPostIds,
     failPostIds,
-  } = await sendMessageReply(aggregatedData, accessToken)
+  } = await sendMessageReply(aggregatedData, accessToken, config.PUSH_FROM)
   console.log('【常规模板】推送结束')
   console.log('---')
 
@@ -57,7 +57,7 @@ export default async function mainForProd() {
   if (config.CALLBACK_TEMPLATE_ID) {
     console.log('---')
     console.log('【推送完成提醒】推送开始')
-    await sendMessageReply(config.CALLBACK_USERS, accessToken, config.CALLBACK_TEMPLATE_ID, callbackTemplateParams)
+    await sendMessageReply(config.CALLBACK_USERS, accessToken, config.PUSH_FROM, config.CALLBACK_TEMPLATE_ID, callbackTemplateParams)
     console.log('【推送完成提醒】推送结束')
     console.log('---')
   }

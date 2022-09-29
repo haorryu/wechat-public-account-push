@@ -1,7 +1,7 @@
 import axios from 'axios'
 import dayjs from 'dayjs'
 import { JSDOM } from 'jsdom'
-
+import keyBy from 'lodash/keyBy.js'
 import config from '../../config/exp-config.js'
 import { DEFAULT_OUTPUT, TYPE_LIST } from '../store/index.js'
 import {
@@ -20,7 +20,7 @@ axios.defaults.timeout = 10000
  * 获取 accessToken
  * @returns accessToken
  */
-export const getAccessToken = async () => {
+export const getAccessToken = async (pushFrom) => {
   // APP_ID
   const appId = config.APP_ID || process.env.APP_ID
   // APP_SECRET
@@ -41,27 +41,69 @@ export const getAccessToken = async () => {
   console.log('已获取appId', appId)
   console.log('已获取appSecret', appSecret)
 
-  const postUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${appId}&secret=${appSecret}`
+  if (pushFrom && pushFrom === 'wechatCompany') {
+    // 企业微信号
+    const postUrl = `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${appId}&corpsecret=${appSecret}`
 
-  try {
-    const res = await axios.get(postUrl).catch((err) => err)
-    if (res.status === 200 && res.data && res.data.access_token) {
-      accessToken = res.data.access_token
-      console.log('---')
-      console.log('获取 accessToken: 成功', res.data)
-      console.log('---')
-    } else {
-      console.log('---')
-      console.error('获取 accessToken: 请求失败', res.data.errmsg)
-      console.log('---')
-      console.log(`40001: 请检查appId，appSecret 填写是否正确；
-                  如果第一次使用微信测试号请关闭测试号平台后重新扫码登陆测试号平台获取最新的appId，appSecret`)
+    try {
+      const res = await axios.get(postUrl).catch((err) => err)
+      if (res.status === 200 && res.data && res.data.errcode === 0) {
+        accessToken = res.data.access_token
+        console.log('---')
+        console.log('企业微信获取 accessToken: 成功')
+        console.log('---')
+      } else {
+        console.log('---')
+        console.error('企业微信获取 accessToken: 请求失败', res.data.errmsg)
+        console.log('---')
+      }
+    } catch (e) {
+      console.error('获取 accessToken: ', e)
     }
-  } catch (e) {
-    console.error('获取 accessToken: ', e)
+  } else {
+    // 微信测试号
+    const postUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${appId}&secret=${appSecret}`
+
+    try {
+      const res = await axios.get(postUrl).catch((err) => err)
+      if (res.status === 200 && res.data && res.data.access_token) {
+        accessToken = res.data.access_token
+        console.log('---')
+        console.log('获取 accessToken: 成功')
+        console.log('---')
+      } else {
+        console.log('---')
+        console.error('获取 accessToken: 请求失败', res.data.errmsg)
+        console.log('---')
+        console.log(`40001: 请检查appId，appSecret 填写是否正确；
+                    如果第一次使用微信测试号请关闭测试号平台后重新扫码登陆测试号平台获取最新的appId，appSecret`)
+      }
+    } catch (e) {
+      console.error('获取 accessToken: ', e)
+    }
   }
 
   return accessToken
+}
+
+/**
+ * 获取天气icon
+ * @param {*} weather
+ * @returns
+ */
+export const getWeatherIcon = (weather) => {
+  let weatherIcon = '🌈'
+  const weatherIconList = ['☀️', '☁️', '⛅️',
+    '☃️', '⛈️', '🏜️', '🏜️', '🌫️', '🌫️', '🌪️', '🌧️']
+  const weatherType = ['晴', '阴', '云', '雪', '雷', '沙', '尘', '雾', '霾', '风', '雨']
+
+  weatherType.forEach((item, index) => {
+    if (weather.indexOf(item) !== -1) {
+      weatherIcon = weatherIconList[index]
+    }
+  })
+
+  return weatherIcon
 }
 
 /**
@@ -289,6 +331,31 @@ export const getPoetry = async () => {
 }
 
 /**
+ * 获取bing每日壁纸数据
+ */
+export const getBing = async () => {
+  const url = 'https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1'
+
+  const res = await axios.get(url, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  }).catch((err) => err)
+
+  if (res.data && res.data.images) {
+    const imgUrl = `https://cn.bing.com/${res.data.images[0].url}`
+    const imgTitle = res.data.images[0].title
+    const imgContent = res.data.images[0].copyright.replace(/\(.*?\)/, '')
+    return {
+      imgUrl,
+      imgTitle,
+      imgContent,
+    }
+  }
+  return {}
+}
+
+/**
  * 获取重要节日信息
  * @param {Array<object>} festivals
  * @return
@@ -406,6 +473,50 @@ export const getSlotList = () => {
 }
 
 /**
+ * 企业微信-组装数据
+ * @param {*} wxTemplateData
+ * @returns
+ */
+export const getSendCompony = async (wxTemplateData) => {
+  const articles = []
+  const infoList = []
+  let bingData = {}
+  const description = ''
+  const link = 'https://tuisong.yunmain.com/show'
+  // 组装头部信息
+  bingData = await getBing()
+  // 格式化数据
+  const allData = keyBy(wxTemplateData, 'name')
+  // 组装天气
+  if (allData.weather) {
+    infoList.push(
+      // 🌨广东肇庆 多云 25 ~ 24
+      `${getWeatherIcon(allData.weather ? allData.weather.value : '')} ${allData.province ? allData.province.value : ''}${allData.city ? allData.city.value : ''}`
+      + ` ${allData.weather ? allData.weather.value : ''} `
+      + `${allData.min_temperature ? allData.min_temperature.value : ''}~${allData.max_temperature ? allData.max_temperature.value : ''}`
+      + '\n'
+      // 阴晴之间，谨防紫外线侵扰
+      + `👔 ${allData.notice ? allData.notice.value : ''}\n`
+      // 儿童、老年人及心脏、呼吸系统疾病患者人群应减少长时间或高强度户外锻炼
+      + `👔 ${allData.ganmao ? allData.ganmao.value : ''}`,
+    )
+  }
+  // 组装节日提醒
+  if (allData.birthday_message) {
+    infoList.push(`${allData.birthday_message ? allData.birthday_message.value : ''}`)
+  }
+
+  articles.push({
+    title: `${allData.date ? allData.date.value : ''}\n${bingData.imgTitle}`,
+    description,
+    url: `${link}?t=${allData.date ? allData.date.value : ''}&p=${bingData.imgUrl}&c=${bingData.imgContent}\\n\\n${infoList.join('\\n\\n')}`,
+    picurl: bingData.imgUrl,
+  })
+
+  return articles
+}
+
+/**
  * 发送消息模板
  * @param {*} templateId
  * @param {*} user
@@ -465,6 +576,67 @@ export const sendMessage = async (templateId, user, accessToken, params) => {
 }
 
 /**
+ * 企业微信-发送消息模板
+ * @param {*} user
+ * @param {*} accessToken
+ * @param {*} params
+ */
+export const sendMessageByCompony = async (agentid, user, accessToken, params) => {
+  const url = `https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${accessToken}`
+
+  const wxTemplateData = {}
+  if (Object.prototype.toString.call(params) === '[object Array]') {
+    params.forEach((item) => {
+      wxTemplateData[item.name] = {
+        value: item.value,
+        color: item.color,
+      }
+    })
+  }
+
+  const articles = getSendCompony(wxTemplateData)
+
+  // 组装数据
+  const data = {
+    touser: user.id,
+    toparty: '',
+    totag: '',
+    msgtype: 'news',
+    agentid,
+    news: {
+      articles,
+    },
+    enable_id_trans: 0,
+    enable_duplicate_check: 0,
+    duplicate_check_interval: 1800,
+  }
+
+  // 发送消息
+  const res = await axios.post(url, data, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  }).catch((err) => err)
+
+  if (res.data && res.data.errcode === 0) {
+    console.log(`${user.name}: 企业微信消息推送消息成功`)
+    return {
+      name: user.name,
+      success: true,
+    }
+  }
+
+  if (res.data && res.data.errcode !== 0) {
+    console.log(res.data)
+    console.error(`${user.name}: 推送消息失败! 请检查填写是否正确或者稍后重试，若多次重试不行请加入答疑群提问`)
+  }
+  return {
+    name: user.name,
+    success: false,
+  }
+}
+
+/**
  * 推送消息, 进行成功失败统计
  * @param {*} users
  * @param {*} accessToken
@@ -472,7 +644,7 @@ export const sendMessage = async (templateId, user, accessToken, params) => {
  * @param {*} params
  * @returns
  */
-export const sendMessageReply = async (users, accessToken, templateId = null, params = null) => {
+export const sendMessageReply = async (users, accessToken, pushFrom, templateId = null, params = null) => {
   const allPromise = []
   const needPostNum = users.length
   let successPostNum = 0
@@ -480,12 +652,23 @@ export const sendMessageReply = async (users, accessToken, templateId = null, pa
   const successPostIds = []
   const failPostIds = []
   for (const user of users) {
-    allPromise.push(sendMessage(
-      templateId || user.useTemplateId,
-      user,
-      accessToken,
-      params || user.wxTemplateParams,
-    ))
+    if (pushFrom && pushFrom === 'wechatCompany') {
+      // 企业微信
+      allPromise.push(sendMessageByCompony(
+        templateId || user.useTemplateId,
+        user,
+        accessToken,
+        params || user.wxTemplateParams,
+      ))
+    } else {
+      // 微信测试号
+      allPromise.push(sendMessage(
+        templateId || user.useTemplateId,
+        user,
+        accessToken,
+        params || user.wxTemplateParams,
+      ))
+    }
   }
   const resList = await Promise.all(allPromise)
   resList.forEach((item) => {
